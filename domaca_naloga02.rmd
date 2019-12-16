@@ -1,0 +1,47 @@
+---
+title: "[IS] Domača naloga 2"
+author: "Martin Preradovič, Niki Bizjak"
+date: "9 12 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Cleaning
+The first step in natural language processing is reading and cleaning the training data. To do this, we will be using the `tm` text mining package, which we can include like so
+```{r}
+library(tm)
+```
+
+Next, we read in the training data from `tsv` file. We have to set the quote character to empty string, so we disable quote characters, because some rows have multiple unescaped quote characters.
+```{r}
+train_data = read.table(
+  file = './insults/train.tsv',
+  sep = '\t',
+  quote = '',
+  header = TRUE
+)
+```
+
+In the next step, we create a corpus from our lines. After that, we apply text transformations to all documents in our corpus. We convert all text to lowercase, remove punctuation, numbers and whitespace. Then we remove english stopwords and stem the document, which only leaves the first part of the words. We could probably get better results if we lemmatized the words.
+```{r warning=FALSE}
+# Create a corpus from our training data
+corpus <- Corpus(VectorSource(train_data$text_a))
+
+# Change all words to lowercase
+corpus <- tm_map(corpus, content_transformer(tolower))
+
+# Remove english stopwords
+corpus <- tm_map(corpus, removeWords, stopwords('english'))
+
+# Remove punctuation, numbers and whitespace
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, stripWhitespace)
+
+corpus <- tm_map(corpus, stemDocument)
+```
+
+## Exploration
