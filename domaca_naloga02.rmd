@@ -45,3 +45,19 @@ corpus <- tm_map(corpus, stemDocument)
 ```
 
 ## Exploration
+The `tm` package has a function that transforms our corpus to term document matrix. This is a matrix, where each row represents a document and each column represents a word. The matrix element $a_{i,j}$ represents the number of occurences of word in column $j$ in document in row $i$.
+```{r}
+# Create a term document matrix from our corpus
+tdm <- TermDocumentMatrix(corpus)
+```
+
+The term document matrix is sparse, which means that it contains a lot of zeros. It contains 2220 rows (or documents) and 9207 words. We now plot the words, where their frequency is at least 80.
+```{r}
+term_frequency <- rowSums(as.matrix(tdm))
+term_frequency <- subset(term_frequency, term_frequency >= 80)
+barplot(term_frequency)
+```
+
+We can see, that the most frequent words are `like`, `just`, `get`, `will` and `fuck`. This probably means that our english stopwords are not good enough.
+
+The words `like`, `just`, `get`, `will` are present in the English stopwords list from Wikipedia, meaning that we have to improve our wordlist removal techinque.
