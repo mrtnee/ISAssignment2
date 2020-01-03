@@ -154,35 +154,61 @@ summary(train_data$label)
 The label distribution in our training (and for that matter testing) data is very unbalanced. There are only a quarter texts, that are labeled as insults.
 
 ### Classification
-For the classification, we have selected the *k-nearest neighbors* and *naive Bayes* algorithms, as they are very fast.
+For the classification, we have selected the *k-nearest neighbors*, *naive Bayes* and *boosted logistic regression* algorithms, as they are easy to understand, very fast and work pretty well with natural language processing problems.
+
+For the performance metric we chose the *accuracy*, *precision*, *recall*, *f1 score* and *specificity*, because they are easy to calculate and give a good metric of the performance of our models.
 
 ```{r warning=FALSE}
 library(caret)
-#library(MLmetrics)
-
-# Create a control for our model training - we will use repeated cross validation
-control <- trainControl(method = 'repeatedcv', number = 8, repeats = 4)
+library(MLmetrics)
 
 # Create a table from document-term matrix and labels in the end
 model_train_data <- data.frame(mat, train_data$label)
 
 test_dtm <- DocumentTermMatrix(test_corpus, control = list(weighting=weightTfIdf))
 test_mat <- as.matrix(test_dtm)
-model_test_data <- data.frame(test_mat, test_data$label)
+test_mat <- test_mat[,most_used_words]
 
 # possible_models = names(getModelInfo())
-possible_methods = c("knn", "naive_bayes")
+possible_methods = c("knn", "naive_bayes", "LogitBoost", "svmLinearWeights")
+
+
+# Create a control for our model training - we will use repeated cross validation
+control <- trainControl(method = 'repeatedcv', number = 10, repeats = 3)
+
+cat('| Classification model |   Accuracy |  Precision |     Recall |   F1 Score | Specificity|\n');
 
 for (method in possible_methods) {
+  # Train the model using the training data and repeated cv training control
   model <- train(
     train_data.label ~ .,
     data = model_train_data,
     method=method,
     trControl=control
   )
+  
+  # To predict many results at once, use the extractPrediction function from carret
+  model_predictions = extractPrediction(
+    list(mode_name=model),
+    testX = test_mat,
+    testY = as.factor(test_data$label),
+  )
+  
+  # The returned matrix has the following columns: obs, pred, model, dataType, object
+  # The obs is the observed data type, pred the predicted
+  # We are only interested in test data, so we only need elements where dataType is "Test"
+  predictions = model_predictions[model_predictions$dataType=='Test',]
+  
+  # We can now use this data to calculate model accuracy, precision, specificity, etc.
+  accuracy = Accuracy(predictions$obs, predictions$pred)
+  precision = Precision(predictions$obs, predictions$pred)
+  recall = Recall(predictions$obs, predictions$pred)
+  f1_score = F1_Score(predictions$obs, predictions$pred)
+  specificity <- Specificity(predictions$obs, predictions$pred)
+  
+  cat(sprintf("| %20s |     %1.4f |     %1.4f |     %1.4f |     %1.4f |     %1.4f |\n",
+              method, accuracy, precision, recall, f1_score, specificity))
 }
-
-
 ```
 
 
