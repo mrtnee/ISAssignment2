@@ -10,91 +10,89 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Cleaning
-The first step in natural language processing is reading and cleaning the training data. To do this, we will be using the `tm` text mining package, which we can include like so
-```{r}
-library(tm)
-```
 
-Next, we read in the training data from `tsv` file. We have to set the quote character to empty string, so we disable quote characters, because some rows have multiple unescaped quote characters.
-```{r}
-train_data = read.table(
-  file = './insults/train.tsv',
-  sep = '\t',
-  quote = '',
-  header = TRUE
-)
-```
-
-In the next step, we create a corpus from our lines. After that, we apply text transformations to all documents in our corpus. We convert all text to lowercase, remove punctuation, numbers and whitespace. Then we remove english stopwords and stem the document, which only leaves the first part of the words. We could probably get better results if we lemmatized the words.
 ```{r warning=FALSE}
-# Create a corpus from our training data
-corpus <- Corpus(VectorSource(train_data$text_a))
+library(tm)
+library(ggplot2)
+require(data.table)
 
-# Change all words to lowercase
-corpus <- tm_map(corpus, content_transformer(tolower))
+# Read training and test data from disk
+train_data = fread('./insults/train.tsv', sep = '\t', header = TRUE, quote = '')
+test_data = fread('./insults/test.tsv', sep = '\t', header = TRUE, quote = '')
 
-# Remove english stopwords
-corpus <- tm_map(corpus, removeWords, stopwords('english'))
+# The label is either 0 or 1, so we can convert it to factor
+train_data$label <- as.factor(train_data$label)
+test_data$label <- as.factor(test_data$label)
 
-# Remove punctuation, numbers and whitespace
-corpus <- tm_map(corpus, removePunctuation)
-corpus <- tm_map(corpus, removeNumbers)
-corpus <- tm_map(corpus, stripWhitespace)
-
-corpus <- tm_map(corpus, stemDocument)
+# Read list of english stopwords
+stopwords_file = file("./data/stopwords.txt", open="r")
+custom_stopwords = readLines(stopwords_file)
+close(stopwords_file)
 ```
+
+```{r warning=FALSE}
+train_corpus <- Corpus(VectorSource(train_data$text_a))
+test_corpus <- Corpus(VectorSource(test_data$text_a))
+
+# Our data contains unicode characters (like \u... and \x... and escape sequences \n \r, ...), remove them
+patterns = c("\\\\x[0-9|a-f]{2}", "\\\\u[0-9|a-f]{2}");
+for (pattern in patterns) {
+  train_corpus <- tm_map(train_corpus, content_transformer(gsub), pattern = pattern, replacement = ' ')
+  test_corpus <- tm_map(test_corpus, content_transformer(gsub), pattern = pattern, replacement = ' ')
+}
+
+# Remove english stopwords and stem them
+train_corpus <- tm_map(train_corpus, removeWords, stopwords('english'))
+train_corpus <- tm_map(train_corpus, removeWords, custom_stopwords)
+train_corpus <- tm_map(train_corpus, stemDocument)
+
+test_corpus <- tm_map(test_corpus, removeWords, stopwords('english'))
+test_corpus <- tm_map(test_corpus, removeWords, custom_stopwords)
+test_corpus <- tm_map(test_corpus, stemDocument)
+
+# Remove everything that is not a letter (so not [:alpha:])
+train_corpus <- tm_map(train_corpus, removePunctuation)
+train_corpus <- tm_map(train_corpus, removeNumbers)
+train_corpus <- tm_map(train_corpus, stripWhitespace)
+train_corpus <- tm_map(train_corpus, content_transformer(tolower))
+
+test_corpus <- tm_map(test_corpus, removePunctuation)
+test_corpus <- tm_map(test_corpus, removeNumbers)
+test_corpus <- tm_map(test_corpus, stripWhitespace)
+test_corpus <- tm_map(test_corpus, content_transformer(tolower))
+```
+
 
 ## Exploration
 
 ### Word frequencies
-The `tm` package has a function that transforms our corpus to term document matrix. This is a matrix, where each row represents a document and each column represents a word. The matrix element $a_{i,j}$ represents the number of occurences of word in column $j$ in document in row $i$.
 ```{r}
-# Create a term document matrix from our corpus
-tdm <- TermDocumentMatrix(corpus)
-```
+tdm <- TermDocumentMatrix(train_corpus)
 
-The term document matrix is sparse, which means that it contains a lot of zeros. It contains 2220 rows (or documents) and 9207 words. We now plot the words, where their frequency is at least 80.
-```{r}
+# Calculate word frequency for each word in term-document matrix
 term_frequency <- rowSums(as.matrix(tdm))
-term_frequency <- subset(term_frequency, term_frequency >= 80)
-barplot(term_frequency)
-```
 
-We can see, that the most frequent words are `like`, `just`, `get`, `will` and `fuck`. This probably means that our english stopwords are not good enough.
-
-The words `like`, `just`, `get`, `will` are present in the English stopwords list from Wikipedia, meaning that we have to improve our wordlist removal techinque.
-
-We have downloaded new list of English stopwords from [here](https://gist.github.com/sebleier/554280) and saved it into `data/stopwords.txt`.
-```{r}
-# Read custom stopwords from our file and then close it
-stopwords_file = file("./data/stopwords.txt", open="r")
-custom_stopwords = readLines(stopwords_file)
-close(stopwords_file)
-
-# Remove stopwords from our corpus
-corpus <- tm_map(corpus, removeWords, custom_stopwords)
-```
-
-If we look at our word frequencies, we can see that there are no more stop words in the most frequent words.
-```{r}
-tdm <- TermDocumentMatrix(corpus)
-term_frequency <- rowSums(as.matrix(tdm))
-term_frequency <- subset(term_frequency, term_frequency >= 80)
-barplot(term_frequency)
+# Only plot words that appear at least 150 times in all documents
+most_frequent <- subset(term_frequency, term_frequency >= 150)
+barplot(most_frequent)
 ```
 
 ### Clustering
-
-
-
 ```{r warning=FALSE}
+# Get only the 100 most used words from our term_frequency matrix
+most_used_words = names(sort(term_frequency, decreasing = TRUE)[1:100])
+
 # First, we construct a document - term matrix
-dtm <- DocumentTermMatrix(corpus, control = list(weighting=weightTfIdf))
+dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
 mat <- as.matrix(dtm)
+
+# The matrix mat is very sparse - meaning that there is a lot of empty space
+# Because clustering is slow, we will only use the rows from the 100 most used words
+mat <- mat[, most_used_words]
 
 # Perform clustering for k = {2, 4, 8, 16}
 for (number_of_clusters in c(2, 4, 8, 16)) {
-  print(sprintf("number_of clusters = %d", number_of_clusters))
+  cat(sprintf("number_of clusters = %d\n", number_of_clusters))
   
   # Use the k-means clustering with number of clusters
   kmeans_result <- kmeans(mat, number_of_clusters)
@@ -104,20 +102,19 @@ for (number_of_clusters in c(2, 4, 8, 16)) {
 	  kmeans_result_sorted <- sort(kmeans_result$centers[i,], decreasing=T)
 	  cat(names(kmeans_result_sorted)[1:10], "\n")
   }
+  
+  cat("\n");
 }
 ```
 
+### Projection to two dimensions
+```{r}
+# First, project our documents in two dimensions using PCA
+pca <- prcomp(mat)
+qplot(pca$x[,1], pca$x[,2], color = train_data$label)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+# Then use the t-SNE to perform projection
+library(Rtsne)
+tsne <- Rtsne(mat, perplexity=20, theta=0.2, dims=2, check_duplicates = F)
+qplot(tsne$Y[,1], tsne$Y[,2], color = train_data$label)
+```
