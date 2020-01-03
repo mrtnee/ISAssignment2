@@ -156,6 +156,8 @@ The label distribution in our training (and for that matter testing) data is ver
 ### Classification
 For the classification, we have selected the *k-nearest neighbors*, *naive Bayes* and *boosted logistic regression* algorithms, as they are easy to understand, very fast and work pretty well with natural language processing problems.
 
+We have also used the *Linear Support Vector Machines* model, because it is believed that it works extremly well with natural language processing problems.
+
 For the performance metric we chose the *accuracy*, *precision*, *recall*, *f1 score* and *specificity*, because they are easy to calculate and give a good metric of the performance of our models.
 
 ```{r warning=FALSE}
