@@ -10,8 +10,9 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Cleaning
+Before doing anything with our text, we have to clean it. The text that we receive consists of unicode characters, escape symbols, HTML tags, etc. Reading the data using `tsvread` does not work, because the text is incorrectly escaped, so we must read it using the `fread` function. After reading tables from disk, we convert training and test labels to factors. Finally, we load custom stopwords list.
 
-```{r warning=FALSE}
+```{r message=FALSE, warning=FALSE}
 library(tm)
 library(ggplot2)
 require(data.table)
@@ -30,15 +31,20 @@ custom_stopwords = readLines(stopwords_file)
 close(stopwords_file)
 ```
 
+After all the data is loaded, we create a corpus source and apply corpus operations on it. We first remove all unicode characters and escape sequences, remove stopwords, remove everything that is not a leter and strip whitespace.
+We are left with ascii text, but it contains multiple different versions of each word (for example `going`, `goes` and `go`). To remove this we could lemmatise our corpus, but for the sake of speed, we will simply stem our corpus - so remove the suffixes of words.
+
 ```{r warning=FALSE}
 train_corpus <- Corpus(VectorSource(train_data$text_a))
 test_corpus <- Corpus(VectorSource(test_data$text_a))
 
-# Our data contains unicode characters (like \u... and \x... and escape sequences \n \r, ...), remove them
-patterns = c("\\\\x[0-9|a-f]{2}", "\\\\u[0-9|a-f]{2}");
+# Remove unicode characters and "escape" characters
+patterns = c("\\\\x[0-9|a-f]{2}", "\\\\u[0-9|a-f]{4}", "\\\\[:alpha:]")
 for (pattern in patterns) {
-  train_corpus <- tm_map(train_corpus, content_transformer(gsub), pattern = pattern, replacement = ' ')
-  test_corpus <- tm_map(test_corpus, content_transformer(gsub), pattern = pattern, replacement = ' ')
+  train_corpus <- tm_map(train_corpus, content_transformer(gsub),
+                         pattern = pattern, replacement = ' ')
+  test_corpus <- tm_map(test_corpus, content_transformer(gsub),
+                        pattern = pattern, replacement = ' ')
 }
 
 # Remove english stopwords and stem them
@@ -46,27 +52,30 @@ train_corpus <- tm_map(train_corpus, removeWords, stopwords('english'))
 train_corpus <- tm_map(train_corpus, removeWords, custom_stopwords)
 train_corpus <- tm_map(train_corpus, stemDocument)
 
+# Remove everything that is not a letter (so not [:alpha:])
+train_corpus <- tm_map(train_corpus, removePunctuation)
+train_corpus <- tm_map(train_corpus, removeNumbers)
+
+test_corpus <- tm_map(test_corpus, removePunctuation)
+test_corpus <- tm_map(test_corpus, removeNumbers)
+
 test_corpus <- tm_map(test_corpus, removeWords, stopwords('english'))
 test_corpus <- tm_map(test_corpus, removeWords, custom_stopwords)
 test_corpus <- tm_map(test_corpus, stemDocument)
 
-# Remove everything that is not a letter (so not [:alpha:])
-train_corpus <- tm_map(train_corpus, removePunctuation)
-train_corpus <- tm_map(train_corpus, removeNumbers)
+# Remove whitespace and convert to lowercase
 train_corpus <- tm_map(train_corpus, stripWhitespace)
 train_corpus <- tm_map(train_corpus, content_transformer(tolower))
 
-test_corpus <- tm_map(test_corpus, removePunctuation)
-test_corpus <- tm_map(test_corpus, removeNumbers)
 test_corpus <- tm_map(test_corpus, stripWhitespace)
 test_corpus <- tm_map(test_corpus, content_transformer(tolower))
 ```
 
-
 ## Exploration
 
 ### Word frequencies
-```{r}
+Now that we have cleaned our text, we can plot the frequency of words in our corpus.
+```{r fig.height=3}
 tdm <- TermDocumentMatrix(train_corpus)
 
 # Calculate word frequency for each word in term-document matrix
@@ -76,19 +85,22 @@ term_frequency <- rowSums(as.matrix(tdm))
 most_frequent <- subset(term_frequency, term_frequency >= 150)
 barplot(most_frequent)
 ```
+As we can see from our plot, the most common words are `like`, `you` `get`, `the`, `fuck`, `one` `know`, `make`, `think`, `peopl`, which are all commonly used English words. The word that stands out a bit is `fuck`, but this is understandable as we are working with insults dataset.
 
 ### Clustering
+For clustering we will use the k-means clustering. The document-term matrix is very sparse, which means that there are a lot of zeros in our matrix. We could remove the most sparse terms in our matrix, but we have decided to only use the most common words to do the clustering.
+
 ```{r warning=FALSE}
-# Get only the 100 most used words from our term_frequency matrix
-most_used_words = names(sort(term_frequency, decreasing = TRUE)[1:100])
+# Get only the 50 most used words from our term_frequency matrix
+most_used_words = names(sort(term_frequency, decreasing = TRUE)[1:60])
 
 # First, we construct a document - term matrix
 dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
 mat <- as.matrix(dtm)
 
 # The matrix mat is very sparse - meaning that there is a lot of empty space
-# Because clustering is slow, we will only use the rows from the 100 most used words
-mat <- mat[, most_used_words]
+# Because clustering is slow, we will only use the rows from the 50 most used words
+mat <- mat[,most_used_words]
 
 # Perform clustering for k = {2, 4, 8, 16}
 for (number_of_clusters in c(2, 4, 8, 16)) {
@@ -108,7 +120,10 @@ for (number_of_clusters in c(2, 4, 8, 16)) {
 ```
 
 ### Projection to two dimensions
-```{r}
+
+To project our documents to two dimensions we used both the PCA and t-SNE algorithm. The colors of the plot represent the training label of a document. The t-SNE visualisation is better, as we can more clearly see the individual document clusters in our plot - as we can see, we have one big cluster and many smaller ones.
+
+```{r fig.height=4, message=FALSE, warning=FALSE}
 # First, project our documents in two dimensions using PCA
 pca <- prcomp(mat)
 qplot(pca$x[,1], pca$x[,2], color = train_data$label)
@@ -118,3 +133,67 @@ library(Rtsne)
 tsne <- Rtsne(mat, perplexity=20, theta=0.2, dims=2, check_duplicates = F)
 qplot(tsne$Y[,1], tsne$Y[,2], color = train_data$label)
 ```
+
+### POS tagging
+```{r}
+library(NLP)
+library(openNLP)
+
+sentence_annotator <- Maxent_Sent_Token_Annotator()
+word_annotator <- Maxent_Word_Token_Annotator()
+pos_annotator <- Maxent_POS_Tag_Annotator()
+
+```
+
+## Modeling
+
+### Class label distribution
+```{r}
+summary(train_data$label)
+```
+The label distribution in our training (and for that matter testing) data is very unbalanced. There are only a quarter texts, that are labeled as insults.
+
+### Classification
+For the classification, we have selected the *k-nearest neighbors* and *naive Bayes* algorithms, as they are very fast.
+
+```{r warning=FALSE}
+library(caret)
+#library(MLmetrics)
+
+# Create a control for our model training - we will use repeated cross validation
+control <- trainControl(method = 'repeatedcv', number = 8, repeats = 4)
+
+# Create a table from document-term matrix and labels in the end
+model_train_data <- data.frame(mat, train_data$label)
+
+test_dtm <- DocumentTermMatrix(test_corpus, control = list(weighting=weightTfIdf))
+test_mat <- as.matrix(test_dtm)
+model_test_data <- data.frame(test_mat, test_data$label)
+
+# possible_models = names(getModelInfo())
+possible_methods = c("knn", "naive_bayes")
+
+for (method in possible_methods) {
+  model <- train(
+    train_data.label ~ .,
+    data = model_train_data,
+    method=method,
+    trControl=control
+  )
+}
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
