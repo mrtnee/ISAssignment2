@@ -45,6 +45,8 @@ corpus <- tm_map(corpus, stemDocument)
 ```
 
 ## Exploration
+
+### Word frequencies
 The `tm` package has a function that transforms our corpus to term document matrix. This is a matrix, where each row represents a document and each column represents a word. The matrix element $a_{i,j}$ represents the number of occurences of word in column $j$ in document in row $i$.
 ```{r}
 # Create a term document matrix from our corpus
@@ -61,3 +63,61 @@ barplot(term_frequency)
 We can see, that the most frequent words are `like`, `just`, `get`, `will` and `fuck`. This probably means that our english stopwords are not good enough.
 
 The words `like`, `just`, `get`, `will` are present in the English stopwords list from Wikipedia, meaning that we have to improve our wordlist removal techinque.
+
+We have downloaded new list of English stopwords from [here](https://gist.github.com/sebleier/554280) and saved it into `data/stopwords.txt`.
+```{r}
+# Read custom stopwords from our file and then close it
+stopwords_file = file("./data/stopwords.txt", open="r")
+custom_stopwords = readLines(stopwords_file)
+close(stopwords_file)
+
+# Remove stopwords from our corpus
+corpus <- tm_map(corpus, removeWords, custom_stopwords)
+```
+
+If we look at our word frequencies, we can see that there are no more stop words in the most frequent words.
+```{r}
+tdm <- TermDocumentMatrix(corpus)
+term_frequency <- rowSums(as.matrix(tdm))
+term_frequency <- subset(term_frequency, term_frequency >= 80)
+barplot(term_frequency)
+```
+
+### Clustering
+
+
+
+```{r warning=FALSE}
+# First, we construct a document - term matrix
+dtm <- DocumentTermMatrix(corpus, control = list(weighting=weightTfIdf))
+mat <- as.matrix(dtm)
+
+# Perform clustering for k = {2, 4, 8, 16}
+for (number_of_clusters in c(2, 4, 8, 16)) {
+  print(sprintf("number_of clusters = %d", number_of_clusters))
+  
+  # Use the k-means clustering with number of clusters
+  kmeans_result <- kmeans(mat, number_of_clusters)
+  
+  # Find the most popular words in all clusters
+  for (i in 1:number_of_clusters) {
+	  kmeans_result_sorted <- sort(kmeans_result$centers[i,], decreasing=T)
+	  cat(names(kmeans_result_sorted)[1:10], "\n")
+  }
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
