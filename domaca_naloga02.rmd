@@ -1,6 +1,6 @@
 ---
 title: "[IS] Domača naloga 2"
-author: "Martin Preradovič, Niki Bizjak"
+author: "Martin Preradović, Niki Bizjak"
 date: "9 12 2019"
 output: pdf_document
 ---
@@ -14,7 +14,6 @@ Before doing anything with our text, we have to clean it. The text that we recei
 
 ```{r message=FALSE, warning=FALSE}
 library(tm)
-library(ggplot2)
 require(data.table)
 
 # Read training and test data from disk
@@ -124,6 +123,8 @@ for (number_of_clusters in c(2, 4, 8, 16)) {
 To project our documents to two dimensions we used both the PCA and t-SNE algorithm. The colors of the plot represent the training label of a document. The t-SNE visualisation is better, as we can more clearly see the individual document clusters in our plot - as we can see, we have one big cluster and many smaller ones.
 
 ```{r fig.height=4, message=FALSE, warning=FALSE}
+library(ggplot2)
+
 # First, project our documents in two dimensions using PCA
 pca <- prcomp(mat)
 qplot(pca$x[,1], pca$x[,2], color = train_data$label)
@@ -135,6 +136,9 @@ qplot(tsne$Y[,1], tsne$Y[,2], color = train_data$label)
 ```
 
 ### POS tagging
+We can get part-of-speech tags from our documents using `NLP` and `OpenNLP` package. First we use sentence annotator to find sentences, then word annotator to find words and finally we use POS annotator to get list of POS tags.
+
+We will use this tags in the future for training our model, because we think it will improve our machine learning algorithm performance.
 ```{r}
 library(NLP)
 library(openNLP)
@@ -143,6 +147,29 @@ sentence_annotator <- Maxent_Sent_Token_Annotator()
 word_annotator <- Maxent_Word_Token_Annotator()
 pos_annotator <- Maxent_POS_Tag_Annotator()
 
+documents_tags <- matrix()
+
+for (document in train_corpus) {
+  document <- as.String(document)
+  
+  if (nchar(document) <= 0)
+    cbind(documents_tags, vector())
+    next
+  
+  annotated_sentences <- annotate(document, sentence_annotator)
+  annotated_words <- annotate(document, word_annotator, annotated_sentences)
+  annotated_pos <- annotate(document, pos_annotator, annotated_words)
+  
+  # Get only words from annoteted words (there are sentences in there too)
+  words = annotated_pos[annotated_words$type == "word"]
+  
+  tags <- vector()
+  for (i in 1:length(words$features))
+    tags <- c(tags, words$features[[i]]$POS)
+  
+  # This is slow, but do we care?
+  cbind(documents_tags, tags)
+}
 ```
 
 ## Modeling
@@ -156,7 +183,7 @@ The label distribution in our training (and for that matter testing) data is ver
 ### Classification
 For the classification, we have selected the *k-nearest neighbors*, *naive Bayes* and *boosted logistic regression* algorithms, as they are easy to understand, very fast and work pretty well with natural language processing problems.
 
-We have also used the *Linear Support Vector Machines* model, because it is believed that it works extremly well with natural language processing problems.
+We have also used the *Linear Support Vector Machines* model, because it is believed that it works extremly well with natural language processing problems. The downside of this model is that it is slower than the others.
 
 For the performance metric we chose the *accuracy*, *precision*, *recall*, *f1 score* and *specificity*, because they are easy to calculate and give a good metric of the performance of our models.
 
