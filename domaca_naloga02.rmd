@@ -37,8 +37,14 @@ We are left with ascii text, but it contains multiple different versions of each
 train_corpus <- Corpus(VectorSource(train_data$text_a))
 test_corpus <- Corpus(VectorSource(test_data$text_a))
 
+# Remove everything that is not a letter or space (so not [:alpha:])
+train_corpus <- tm_map(train_corpus, content_transformer(gsub),
+                         pattern = '[^[:alnum:][[:blank:]]]', replacement = ' ')
+test_corpus <- tm_map(test_corpus, content_transformer(gsub),
+                         pattern = '[^[:alnum:][[:blank:]]]', replacement = ' ')
+
 # Remove unicode characters and "escape" characters
-patterns = c("\\\\x[0-9|a-f]{2}", "\\\\u[0-9|a-f]{4}", "\\\\[:alpha:]")
+patterns = c("\\\\x[0-9|a-f]{2}", "\\\\u[0-9|a-f]{4}")
 for (pattern in patterns) {
   train_corpus <- tm_map(train_corpus, content_transformer(gsub),
                          pattern = pattern, replacement = ' ')
@@ -46,17 +52,17 @@ for (pattern in patterns) {
                         pattern = pattern, replacement = ' ')
 }
 
-# Remove english stopwords and stem them
-train_corpus <- tm_map(train_corpus, removeWords, stopwords('english'))
-train_corpus <- tm_map(train_corpus, removeWords, custom_stopwords)
-train_corpus <- tm_map(train_corpus, stemDocument)
-
 # Remove everything that is not a letter (so not [:alpha:])
 train_corpus <- tm_map(train_corpus, removePunctuation)
 train_corpus <- tm_map(train_corpus, removeNumbers)
 
 test_corpus <- tm_map(test_corpus, removePunctuation)
 test_corpus <- tm_map(test_corpus, removeNumbers)
+
+# Remove english stopwords and stem them
+train_corpus <- tm_map(train_corpus, removeWords, stopwords('english'))
+train_corpus <- tm_map(train_corpus, removeWords, custom_stopwords)
+train_corpus <- tm_map(train_corpus, stemDocument)
 
 test_corpus <- tm_map(test_corpus, removeWords, stopwords('english'))
 test_corpus <- tm_map(test_corpus, removeWords, custom_stopwords)
@@ -91,7 +97,7 @@ For clustering we will use the k-means clustering. The document-term matrix is v
 
 ```{r warning=FALSE}
 # Get only the 50 most used words from our term_frequency matrix
-most_used_words = names(sort(term_frequency, decreasing = TRUE)[1:60])
+most_used_words = names(sort(term_frequency, decreasing = TRUE)[1:50])
 
 # First, we construct a document - term matrix
 dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
@@ -187,23 +193,47 @@ We have also used the *Linear Support Vector Machines* model, because it is beli
 
 For the performance metric we chose the *accuracy*, *precision*, *recall*, *f1 score* and *specificity*, because they are easy to calculate and give a good metric of the performance of our models.
 
+Before training our model, we have to find features (words) that are in both training and test data. We will only use the 50 most frequent terms in our term document matrix as we have found out that it works best. Higher number of features not only means more training time, but it also decreases accuracy
+```{r}
+train_dtm = DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
+test_dtm <- DocumentTermMatrix(test_corpus, control = list(weighting=weightTfIdf))
+
+# Get only words that appear in both train and test data
+common_words = intersect(train_dtm$dimnames$Terms, test_dtm$dimnames$Terms);
+
+# Order the words in train data by number of occurences in documents
+train_tdm = TermDocumentMatrix(train_corpus)
+train_word_frequency <- rowSums(as.matrix(train_tdm))
+train_most_frequent = names(sort(train_word_frequency, decreasing = TRUE))
+most_frequent = intersect(train_most_frequent, common_words)
+
+# Get only the 50 most frequent words that are in both train and test data
+most_frequent = most_frequent[1:50]
+
+mat <- as.matrix(train_dtm)
+test_mat <- as.matrix(test_dtm)
+
+test_mat <- test_mat[,most_frequent]
+mat <- mat[,most_frequent]
+```
+
+After we have found the intersection, we can start training our models.
 ```{r warning=FALSE}
 library(caret)
 library(MLmetrics)
 
+# Set a random generator seed, so we get the same result every time
+set.seed(1024);
+
 # Create a table from document-term matrix and labels in the end
 model_train_data <- data.frame(mat, train_data$label)
 
-test_dtm <- DocumentTermMatrix(test_corpus, control = list(weighting=weightTfIdf))
-test_mat <- as.matrix(test_dtm)
-test_mat <- test_mat[,most_used_words]
-
-# possible_models = names(getModelInfo())
-possible_methods = c("knn", "naive_bayes", "LogitBoost", "svmLinearWeights")
-
+# possible_methods = c("knn", "naive_bayes", "LogitBoost", "svmLinearWeights")
+possible_methods = c("knn", "naive_bayes", "LogitBoost")
+# possible_methods = c("svmLinearWeights")
 
 # Create a control for our model training - we will use repeated cross validation
-control <- trainControl(method = 'repeatedcv', number = 10, repeats = 3)
+control <- trainControl(method = 'repeatedcv', number = 10, repeats = 5)
 
 cat('| Classification model |   Accuracy |  Precision |     Recall |   F1 Score | Specificity|\n');
 
@@ -230,10 +260,10 @@ for (method in possible_methods) {
   
   # We can now use this data to calculate model accuracy, precision, specificity, etc.
   accuracy = Accuracy(predictions$obs, predictions$pred)
-  precision = Precision(predictions$obs, predictions$pred)
+  precision = Precision(predictions$obs, predictions$pred, positive = 1)
   recall = Recall(predictions$obs, predictions$pred)
-  f1_score = F1_Score(predictions$obs, predictions$pred)
-  specificity <- Specificity(predictions$obs, predictions$pred)
+  f1_score = F1_Score(predictions$obs, predictions$pred, positive = 1)
+  specificity <- Specificity(predictions$obs, predictions$pred, positive = 1)
   
   cat(sprintf("| %20s |     %1.4f |     %1.4f |     %1.4f |     %1.4f |     %1.4f |\n",
               method, accuracy, precision, recall, f1_score, specificity))
