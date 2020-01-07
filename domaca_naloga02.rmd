@@ -193,7 +193,7 @@ We have also used the *Linear Support Vector Machines* model, because it is beli
 
 For the performance metric we chose the *accuracy*, *precision*, *recall*, *f1 score* and *specificity*, because they are easy to calculate and give a good metric of the performance of our models.
 
-Before training our model, we have to find features (words) that are in both training and test data. We will only use the 50 most frequent terms in our term document matrix as we have found out that it works best. Higher number of features not only means more training time, but it also decreases accuracy
+We will only use the 100 most frequent terms in our term document matrix, because there is almost no difference in model accuracy if we select more terms. Higher number of features also means more training time.
 ```{r}
 train_dtm = DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
 test_dtm <- DocumentTermMatrix(test_corpus, control = list(weighting=weightTfIdf))
@@ -208,13 +208,23 @@ train_most_frequent = names(sort(train_word_frequency, decreasing = TRUE))
 most_frequent = intersect(train_most_frequent, common_words)
 
 # Get only the 50 most frequent words that are in both train and test data
-most_frequent = most_frequent[1:50]
+most_frequent = most_frequent[1:100]
 
 mat <- as.matrix(train_dtm)
 test_mat <- as.matrix(test_dtm)
 
 test_mat <- test_mat[,most_frequent]
 mat <- mat[,most_frequent]
+
+# Normalize the data to be in the interval [0, 1]
+for (i in 1:dim(mat)[2]) {
+  m1 = max(mat[,i])
+  m2 = max(test_mat[,i])
+  if (m1 != 0)
+    mat[,i] = mat[,i] / m1
+  if (m2 != 0)
+      test_mat[,i] = test_mat[,i] / m2
+}
 ```
 
 After we have found the intersection, we can start training our models.
@@ -228,9 +238,7 @@ set.seed(1024);
 # Create a table from document-term matrix and labels in the end
 model_train_data <- data.frame(mat, train_data$label)
 
-# possible_methods = c("knn", "naive_bayes", "LogitBoost", "svmLinearWeights")
-possible_methods = c("knn", "naive_bayes", "LogitBoost")
-# possible_methods = c("svmLinearWeights")
+possible_methods = c("knn", "naive_bayes", "LogitBoost", "kernelpls", "pls", "svmLinear", "svmLinearWeights")
 
 # Create a control for our model training - we will use repeated cross validation
 control <- trainControl(method = 'repeatedcv', number = 10, repeats = 5)
@@ -269,6 +277,8 @@ for (method in possible_methods) {
               method, accuracy, precision, recall, f1_score, specificity))
 }
 ```
+
+As we can see from the table above, all algorithms have almost the same accuracy, but not much better than majority classifier (which has around 0.73 accuracy on both train and test data).
 
 ## Understanding
 
