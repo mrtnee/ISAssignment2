@@ -62,11 +62,11 @@ test_corpus <- tm_map(test_corpus, removeNumbers)
 # Remove english stopwords and stem them
 train_corpus <- tm_map(train_corpus, removeWords, stopwords('english'))
 train_corpus <- tm_map(train_corpus, removeWords, custom_stopwords)
-train_corpus <- tm_map(train_corpus, stemDocument)
+# train_corpus <- tm_map(train_corpus, stemDocument)
 
 test_corpus <- tm_map(test_corpus, removeWords, stopwords('english'))
 test_corpus <- tm_map(test_corpus, removeWords, custom_stopwords)
-test_corpus <- tm_map(test_corpus, stemDocument)
+# test_corpus <- tm_map(test_corpus, stemDocument)
 
 # Remove whitespace and convert to lowercase
 train_corpus <- tm_map(train_corpus, stripWhitespace)
@@ -74,6 +74,47 @@ train_corpus <- tm_map(train_corpus, content_transformer(tolower))
 
 test_corpus <- tm_map(test_corpus, stripWhitespace)
 test_corpus <- tm_map(test_corpus, content_transformer(tolower))
+```
+
+## Removal of proper nouns
+```{r}
+library(NLP)
+library(openNLP)
+
+sentence_annotator <- Maxent_Sent_Token_Annotator()
+word_annotator <- Maxent_Word_Token_Annotator()
+pos_annotator <- Maxent_POS_Tag_Annotator()
+
+# Vector of proper nouns that we have found in our text
+found_proper_nouns = vector()
+
+for (i in 1:length(train_corpus)) {
+  document <- as.String(train_corpus[[i]]$content)
+  
+  annotated_sentences <- annotate(document, sentence_annotator)
+  annotated_words <- annotate(document, word_annotator, annotated_sentences)
+  annotated_pos <- annotate(document, pos_annotator, annotated_words)
+  
+  # Get only words from annoteted words (there are sentences in there too)
+  words = annotated_pos[annotated_words$type == "word"]
+  
+  tags <- vector()
+  for (i in 1:length(words$features))
+    tags <- c(tags, words$features[[i]]$POS)
+  
+  # Get only proper nouns
+  proper_nouns = words[tags=="NNP"]
+  if (length(proper_nouns) > 0) {
+    found_proper_nouns <- c(found_proper_nouns, document[proper_nouns])
+  }
+}
+
+# Now that we have found proper nouns, we can remove them from our train and test corpus
+train_corpus <- tm_map(train_corpus, removeWords, found_proper_nouns)
+test_corpus <- tm_map(test_corpus, removeWords, found_proper_nouns)
+
+train_corpus <- tm_map(train_corpus, stemDocument)
+test_corpus <- tm_map(test_corpus, stemDocument)
 ```
 
 ## Exploration
@@ -208,7 +249,7 @@ train_most_frequent = names(sort(train_word_frequency, decreasing = TRUE))
 most_frequent = intersect(train_most_frequent, common_words)
 
 # Get only the 50 most frequent words that are in both train and test data
-most_frequent = most_frequent[1:100]
+most_frequent = most_frequent[1:50]
 
 mat <- as.matrix(train_dtm)
 test_mat <- as.matrix(test_dtm)
