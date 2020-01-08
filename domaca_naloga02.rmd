@@ -1,6 +1,6 @@
 ---
 title: "[IS] Domača naloga 2"
-author: "Martin Preradovič, Niki Bizjak"
+author: "Martin Preradović, Niki Bizjak"
 date: "9 12 2019"
 output: pdf_document
 ---
@@ -14,7 +14,6 @@ Before doing anything with our text, we have to clean it. The text that we recei
 
 ```{r message=FALSE, warning=FALSE}
 library(tm)
-library(ggplot2)
 require(data.table)
 
 # Read training and test data from disk
@@ -38,19 +37,20 @@ We are left with ascii text, but it contains multiple different versions of each
 train_corpus <- Corpus(VectorSource(train_data$text_a))
 test_corpus <- Corpus(VectorSource(test_data$text_a))
 
+# Remove everything that is not a letter or space (so not [:alpha:])
+train_corpus <- tm_map(train_corpus, content_transformer(gsub),
+                         pattern = '[^[:alnum:][[:blank:]]]', replacement = ' ')
+test_corpus <- tm_map(test_corpus, content_transformer(gsub),
+                         pattern = '[^[:alnum:][[:blank:]]]', replacement = ' ')
+
 # Remove unicode characters and "escape" characters
-patterns = c("\\\\x[0-9|a-f]{2}", "\\\\u[0-9|a-f]{4}", "\\\\[:alpha:]")
+patterns = c("\\\\x[0-9|a-f]{2}", "\\\\u[0-9|a-f]{4}")
 for (pattern in patterns) {
   train_corpus <- tm_map(train_corpus, content_transformer(gsub),
                          pattern = pattern, replacement = ' ')
   test_corpus <- tm_map(test_corpus, content_transformer(gsub),
                         pattern = pattern, replacement = ' ')
 }
-
-# Remove english stopwords and stem them
-train_corpus <- tm_map(train_corpus, removeWords, stopwords('english'))
-train_corpus <- tm_map(train_corpus, removeWords, custom_stopwords)
-train_corpus <- tm_map(train_corpus, stemDocument)
 
 # Remove everything that is not a letter (so not [:alpha:])
 train_corpus <- tm_map(train_corpus, removePunctuation)
@@ -59,9 +59,14 @@ train_corpus <- tm_map(train_corpus, removeNumbers)
 test_corpus <- tm_map(test_corpus, removePunctuation)
 test_corpus <- tm_map(test_corpus, removeNumbers)
 
+# Remove english stopwords and stem them
+train_corpus <- tm_map(train_corpus, removeWords, stopwords('english'))
+train_corpus <- tm_map(train_corpus, removeWords, custom_stopwords)
+# train_corpus <- tm_map(train_corpus, stemDocument)
+
 test_corpus <- tm_map(test_corpus, removeWords, stopwords('english'))
 test_corpus <- tm_map(test_corpus, removeWords, custom_stopwords)
-test_corpus <- tm_map(test_corpus, stemDocument)
+# test_corpus <- tm_map(test_corpus, stemDocument)
 
 # Remove whitespace and convert to lowercase
 train_corpus <- tm_map(train_corpus, stripWhitespace)
@@ -69,6 +74,50 @@ train_corpus <- tm_map(train_corpus, content_transformer(tolower))
 
 test_corpus <- tm_map(test_corpus, stripWhitespace)
 test_corpus <- tm_map(test_corpus, content_transformer(tolower))
+```
+
+## Removal of proper nouns
+
+To remove proper nouns, we first use the `NLP` library to annotate sentences, words and parts-of-speech and then we remove only words that have a POS tag `"NNP"`, which is the tag for proper nouns.
+
+```{r warning=FALSE}
+library(NLP)
+library(openNLP)
+
+sentence_annotator <- Maxent_Sent_Token_Annotator()
+word_annotator <- Maxent_Word_Token_Annotator()
+pos_annotator <- Maxent_POS_Tag_Annotator()
+
+# Vector of proper nouns that we have found in our text
+found_proper_nouns = vector()
+
+for (i in 1:length(train_corpus)) {
+  document <- as.String(train_corpus[[i]]$content)
+  
+  annotated_sentences <- annotate(document, sentence_annotator)
+  annotated_words <- annotate(document, word_annotator, annotated_sentences)
+  annotated_pos <- annotate(document, pos_annotator, annotated_words)
+  
+  # Get only words from annoteted words (there are sentences in there too)
+  words = annotated_pos[annotated_words$type == "word"]
+  
+  tags <- vector()
+  for (i in 1:length(words$features))
+    tags <- c(tags, words$features[[i]]$POS)
+  
+  # Get only proper nouns
+  proper_nouns = words[tags=="NNP"]
+  if (length(proper_nouns) > 0) {
+    found_proper_nouns <- c(found_proper_nouns, document[proper_nouns])
+  }
+}
+
+# Now that we have found proper nouns, we can remove them from our train and test corpus
+train_corpus <- tm_map(train_corpus, removeWords, found_proper_nouns)
+test_corpus <- tm_map(test_corpus, removeWords, found_proper_nouns)
+
+train_corpus <- tm_map(train_corpus, stemDocument)
+test_corpus <- tm_map(test_corpus, stemDocument)
 ```
 
 ## Exploration
@@ -92,7 +141,7 @@ For clustering we will use the k-means clustering. The document-term matrix is v
 
 ```{r warning=FALSE}
 # Get only the 50 most used words from our term_frequency matrix
-most_used_words = names(sort(term_frequency, decreasing = TRUE)[1:60])
+most_used_words = names(sort(term_frequency, decreasing = TRUE)[1:50])
 
 # First, we construct a document - term matrix
 dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
@@ -124,6 +173,8 @@ for (number_of_clusters in c(2, 4, 8, 16)) {
 To project our documents to two dimensions we used both the PCA and t-SNE algorithm. The colors of the plot represent the training label of a document. The t-SNE visualisation is better, as we can more clearly see the individual document clusters in our plot - as we can see, we have one big cluster and many smaller ones.
 
 ```{r fig.height=4, message=FALSE, warning=FALSE}
+library(ggplot2)
+
 # First, project our documents in two dimensions using PCA
 pca <- prcomp(mat)
 qplot(pca$x[,1], pca$x[,2], color = train_data$label)
@@ -135,6 +186,9 @@ qplot(tsne$Y[,1], tsne$Y[,2], color = train_data$label)
 ```
 
 ### POS tagging
+We can get part-of-speech tags from our documents using `NLP` and `OpenNLP` package. First we use sentence annotator to find sentences, then word annotator to find words and finally we use POS annotator to get list of POS tags.
+
+We will use this tags in the future for training our model, because we think it will improve our machine learning algorithm performance.
 ```{r}
 library(NLP)
 library(openNLP)
@@ -143,6 +197,29 @@ sentence_annotator <- Maxent_Sent_Token_Annotator()
 word_annotator <- Maxent_Word_Token_Annotator()
 pos_annotator <- Maxent_POS_Tag_Annotator()
 
+documents_tags <- matrix()
+
+for (document in train_corpus) {
+  document <- as.String(document)
+  
+  if (nchar(document) <= 0)
+    cbind(documents_tags, vector())
+    next
+  
+  annotated_sentences <- annotate(document, sentence_annotator)
+  annotated_words <- annotate(document, word_annotator, annotated_sentences)
+  annotated_pos <- annotate(document, pos_annotator, annotated_words)
+  
+  # Get only words from annoteted words (there are sentences in there too)
+  words = annotated_pos[annotated_words$type == "word"]
+  
+  tags <- vector()
+  for (i in 1:length(words$features))
+    tags <- c(tags, words$features[[i]]$POS)
+  
+  # This is slow, but do we care?
+  cbind(documents_tags, tags)
+}
 ```
 
 ## Modeling
@@ -156,27 +233,59 @@ The label distribution in our training (and for that matter testing) data is ver
 ### Classification
 For the classification, we have selected the *k-nearest neighbors*, *naive Bayes* and *boosted logistic regression* algorithms, as they are easy to understand, very fast and work pretty well with natural language processing problems.
 
-We have also used the *Linear Support Vector Machines* model, because it is believed that it works extremly well with natural language processing problems.
+We have also used the *Linear Support Vector Machines* model, because it is believed that it works extremly well with natural language processing problems. The downside of this model is that it is slower than the others.
 
 For the performance metric we chose the *accuracy*, *precision*, *recall*, *f1 score* and *specificity*, because they are easy to calculate and give a good metric of the performance of our models.
 
+We will only use the 60 most frequent terms in our term document matrix, because there is almost no difference in model accuracy if we select more terms. Higher number of features also means more training time.
+```{r}
+train_dtm = DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
+test_dtm <- DocumentTermMatrix(test_corpus, control = list(weighting=weightTfIdf))
+
+# Get only words that appear in both train and test data
+common_words = intersect(train_dtm$dimnames$Terms, test_dtm$dimnames$Terms);
+
+# Order the words in train data by number of occurences in documents
+train_tdm = TermDocumentMatrix(train_corpus)
+train_word_frequency <- rowSums(as.matrix(train_tdm))
+train_most_frequent = names(sort(train_word_frequency, decreasing = TRUE))
+most_frequent = intersect(train_most_frequent, common_words)
+
+# Get only the 50 most frequent words that are in both train and test data
+most_frequent = most_frequent[1:60]
+
+mat <- as.matrix(train_dtm)
+test_mat <- as.matrix(test_dtm)
+
+test_mat <- test_mat[,most_frequent]
+mat <- mat[,most_frequent]
+
+# Normalize the data to be in the interval [0, 1]
+for (i in 1:dim(mat)[2]) {
+  m1 = max(mat[,i])
+  m2 = max(test_mat[,i])
+  if (m1 != 0)
+    mat[,i] = mat[,i] / m1
+  if (m2 != 0)
+      test_mat[,i] = test_mat[,i] / m2
+}
+```
+
+After we have found the intersection, we can start training our models.
 ```{r warning=FALSE}
 library(caret)
 library(MLmetrics)
 
+# Set a random generator seed, so we get the same result every time
+set.seed(1024);
+
 # Create a table from document-term matrix and labels in the end
 model_train_data <- data.frame(mat, train_data$label)
 
-test_dtm <- DocumentTermMatrix(test_corpus, control = list(weighting=weightTfIdf))
-test_mat <- as.matrix(test_dtm)
-test_mat <- test_mat[,most_used_words]
-
-# possible_models = names(getModelInfo())
-possible_methods = c("knn", "naive_bayes", "LogitBoost", "svmLinearWeights")
-
+possible_methods = c("knn", "naive_bayes", "LogitBoost", "kernelpls", "pls", "svmLinear", "svmLinearWeights")
 
 # Create a control for our model training - we will use repeated cross validation
-control <- trainControl(method = 'repeatedcv', number = 10, repeats = 3)
+control <- trainControl(method = 'repeatedcv', number = 10, repeats = 5)
 
 cat('| Classification model |   Accuracy |  Precision |     Recall |   F1 Score | Specificity|\n');
 
@@ -200,18 +309,28 @@ for (method in possible_methods) {
   # The obs is the observed data type, pred the predicted
   # We are only interested in test data, so we only need elements where dataType is "Test"
   predictions = model_predictions[model_predictions$dataType=='Test',]
+  train_predictions = model_predictions[model_predictions$dataType=='Training',]
+  
+  t1 <- table(predictions$obs, predictions$pred)
+  t2 <- table(train_predictions$obs, train_predictions$pred)
   
   # We can now use this data to calculate model accuracy, precision, specificity, etc.
   accuracy = Accuracy(predictions$obs, predictions$pred)
-  precision = Precision(predictions$obs, predictions$pred)
+  precision = Precision(predictions$obs, predictions$pred, positive = 1)
   recall = Recall(predictions$obs, predictions$pred)
-  f1_score = F1_Score(predictions$obs, predictions$pred)
-  specificity <- Specificity(predictions$obs, predictions$pred)
+  f1_score = F1_Score(predictions$obs, predictions$pred, positive = 1)
+  specificity <- Specificity(predictions$obs, predictions$pred, positive = 1)
   
   cat(sprintf("| %20s |     %1.4f |     %1.4f |     %1.4f |     %1.4f |     %1.4f |\n",
               method, accuracy, precision, recall, f1_score, specificity))
 }
 ```
+
+As we can see from the table above, all algorithms have almost the same accuracy. If we look at the *k-nearest neighbors* algorithm (or any other algorithm for that matter), we can see that it has a high recall, which means that our model has a low number of false negatives That means that the number of documents that were insults and were not classified as insults is low.
+
+We can also see from our table above, that or *knn* model has a relatively low precision, which means that we have a lot of false positives. That means that we have a lot of documents that were not insults, but were classified as insults.
+
+The best trained model is the *svmLinear* model, which has the highest accuracy, precision, recall, f1 score and specificity.
 
 ## Understanding
 
