@@ -220,6 +220,10 @@ Perform feature ranking by using different filter methods and display the top 10
 ``` {r warning=FALSE}
 library(CORElearn)
 
+# First, we construct a document - term matrix
+dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
+mat <- as.matrix(dtm)
+
 relief.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "Relief"), decreasing = T)
 feature.names.relief <- names(relief.importances)
 feature.names.relief[1:10]
@@ -248,10 +252,71 @@ mdl.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "MDL"),
 feature.names.mdl <- names(mdl.importances)
 feature.names.mdl[1:10]
 
+cosine.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "DistAngle"), decreasing = T)
+feature.names.cosine <- names(cosine.importances)
+feature.names.cosine[1:10]
+
+reliefFMerit.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "ReliefFmerit"), decreasing = T)
+feature.names.reliefFMerit <- names(reliefFMerit.importances)
+feature.names.reliefFMerit[1:10]
+
+rReliefFSqrDist.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "MyopicReliefF"), decreasing = T)
+feature.names.rReliefFSqrDist <- names(rReliefFSqrDist.importances)
+feature.names.rReliefFSqrDist[1:10]
 
 ```
 
+### Model re-evaluation with top n number of features
 
+``` {r warning = FALSE}
+nofFeatures <- c(1, 2, 3, 5, 7, 9, 15, 20, 30, 40)
+
+method = "svmLinearWeights";
+
+control <- trainControl(method = 'repeatedcv', number = 10, repeats = 3)
+
+
+cat('| Number of top features |   Accuracy |  Precision |     Recall |   F1 Score | Specificity|\n');
+for (n in nofFeatures) {
+  # First extract a new dtm with only the top n features
+  top_train_dtm = dtm[,intersect(colnames(dtm), feature.names.rReliefFSqrDist[1:n])]
+  mat <- as.matrix(top_train_dtm)
+  
+  top_test_dtm <- DocumentTermMatrix(test_corpus)
+  top_test_dtm <- top_test_dtm[, intersect(colnames(top_test_dtm), feature.names.rReliefFSqrDist[1:n])]
+  test_mat <- as.matrix(top_test_dtm)
+  
+  model_train_data <- data.frame(mat, train_data$label)
+  
+  # Train the model using the training data and repeated cv training control
+  model <- train(
+    train_data.label ~ .,
+    data = model_train_data,
+    method=method,
+    trControl=control
+  )
+  
+  # To predict many results at once, use the extractPrediction function from carret
+  model_predictions = extractPrediction(
+    list(mode_name=model),
+    testX = test_mat,
+    testY = as.factor(test_data$label),
+  )
+  
+  predictions = model_predictions[model_predictions$dataType=='Test',]
+  
+  accuracy = Accuracy(predictions$obs, predictions$pred)
+  precision = Precision(predictions$obs, predictions$pred)
+  recall = Recall(predictions$obs, predictions$pred)
+  f1_score = F1_Score(predictions$obs, predictions$pred)
+  specificity <- Specificity(predictions$obs, predictions$pred)
+  
+  cat(sprintf("| %22d |     %1.4f |     %1.4f |     %1.4f |     %1.4f |     %1.4f |\n",
+              n, accuracy, precision, recall, f1_score, specificity))
+}
+
+
+```
 
 
 
