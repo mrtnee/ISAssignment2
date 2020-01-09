@@ -246,7 +246,7 @@ We have also used the *Linear Support Vector Machines* model, because it is beli
 For the performance metric we chose the *accuracy*, *precision*, *recall*, *f1 score* and *specificity*, because they are easy to calculate and give a good metric of the performance of our models.
 
 We will only use the 60 most frequent terms in our term document matrix, because there is almost no difference in model accuracy if we select more terms. Higher number of features also means more training time.
-```{r}
+```{r warning=FALSE}
 train_dtm = DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
 test_dtm <- DocumentTermMatrix(test_corpus, control = list(weighting=weightTfIdf))
 
@@ -358,7 +358,7 @@ gini_features[1:10]
 mdl_features[1:10]
 ```
 
-### Model re-evaluation with top n number of features
+### Model re-evaluation with top n features
 
 For model re-evaluation we have chosen the Gini-index filter method.
 
