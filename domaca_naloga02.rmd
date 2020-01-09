@@ -267,16 +267,6 @@ test_mat <- as.matrix(test_dtm)
 
 test_mat <- test_mat[,most_frequent]
 mat <- mat[,most_frequent]
-
-# Normalize the data to be in the interval [0, 1]
-for (i in 1:dim(mat)[2]) {
-  m1 = max(mat[,i])
-  m2 = max(test_mat[,i])
-  if (m1 != 0)
-    mat[,i] = mat[,i] / m1
-  if (m2 != 0)
-      test_mat[,i] = test_mat[,i] / m2
-}
 ```
 
 After we have found the intersection, we can start training our models.
@@ -318,9 +308,6 @@ for (method in possible_methods) {
   # We are only interested in test data, so we only need elements where dataType is "Test"
   predictions = model_predictions[model_predictions$dataType=='Test',]
   train_predictions = model_predictions[model_predictions$dataType=='Training',]
-  
-  t1 <- table(predictions$obs, predictions$pred)
-  t2 <- table(train_predictions$obs, train_predictions$pred)
   
   # We can now use this data to calculate model accuracy, precision, specificity, etc.
   accuracy = Accuracy(predictions$obs, predictions$pred)
