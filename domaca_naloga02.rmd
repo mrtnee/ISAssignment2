@@ -116,6 +116,14 @@ for (i in 1:length(train_corpus)) {
 train_corpus <- tm_map(train_corpus, removeWords, found_proper_nouns)
 test_corpus <- tm_map(test_corpus, removeWords, found_proper_nouns)
 
+# Remove english stopwords and stem them
+train_corpus <- tm_map(train_corpus, removeWords, stopwords('english'))
+train_corpus <- tm_map(train_corpus, removeWords, custom_stopwords)
+# train_corpus <- tm_map(train_corpus, stemDocument)
+
+test_corpus <- tm_map(test_corpus, removeWords, stopwords('english'))
+test_corpus <- tm_map(test_corpus, removeWords, custom_stopwords)
+
 train_corpus <- tm_map(train_corpus, stemDocument)
 test_corpus <- tm_map(test_corpus, stemDocument)
 ```
@@ -173,16 +181,16 @@ for (number_of_clusters in c(2, 4, 8, 16)) {
 To project our documents to two dimensions we used both the PCA and t-SNE algorithm. The colors of the plot represent the training label of a document. The t-SNE visualisation is better, as we can more clearly see the individual document clusters in our plot - as we can see, we have one big cluster and many smaller ones.
 
 ```{r fig.height=4, message=FALSE, warning=FALSE}
-library(ggplot2)
-
-# First, project our documents in two dimensions using PCA
-pca <- prcomp(mat)
-qplot(pca$x[,1], pca$x[,2], color = train_data$label)
-
-# Then use the t-SNE to perform projection
-library(Rtsne)
-tsne <- Rtsne(mat, perplexity=20, theta=0.2, dims=2, check_duplicates = F)
-qplot(tsne$Y[,1], tsne$Y[,2], color = train_data$label)
+# library(ggplot2)
+# 
+# # First, project our documents in two dimensions using PCA
+# pca <- prcomp(mat)
+# qplot(pca$x[,1], pca$x[,2], color = train_data$label)
+# 
+# # Then use the t-SNE to perform projection
+# library(Rtsne)
+# tsne <- Rtsne(mat, perplexity=20, theta=0.2, dims=2, check_duplicates = F)
+# qplot(tsne$Y[,1], tsne$Y[,2], color = train_data$label)
 ```
 
 ### POS tagging
@@ -334,78 +342,63 @@ The best trained model is the *svmLinear* model, which has the highest accuracy,
 
 ## Understanding
 
-Perform feature ranking by using different filter methods and display the top 10 features for each filter method.
+For feature ranking we have selected the following filter methods: *Relief*, *ReliefFBestK*, *Informational Gain*, *Gini-index*, *(M)inimum (D)escription (L)ength*.
+
+We can see, that *InfGain*, *Gini* and *MDL* give us similar results.
 
 ``` {r warning=FALSE}
 library(CORElearn)
 
-# First, we construct a document - term matrix
-dtm <- DocumentTermMatrix(train_corpus, control = list(weighting=weightTfIdf))
-mat <- as.matrix(dtm)
+relief_evals <- sort(attrEval(train_data.label ~ ., model_train_data, "Relief"), decreasing = T)
+relief_features <- names(relief_evals)
 
-relief.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "Relief"), decreasing = T)
-feature.names.relief <- names(relief.importances)
-feature.names.relief[1:10]
+reliefFBestK_evals <- sort(attrEval(train_data.label ~ ., model_train_data, "ReliefFbestK"), decreasing = T)
+reliefFBestK_features <- names(reliefFBestK_evals)
 
-eqrelieff.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "ReliefFequalK"), decreasing = T)
-feature.names.eqrelieff <- names(eqrelieff.importances)
-feature.names.eqrelieff[1:10]
+infGain_evals <- sort(attrEval(train_data.label ~ ., model_train_data, "InfGain"), decreasing = T)
+infGain_features <- names(infGain_evals)
 
-exprelieff.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "ReliefFexpRank"), decreasing = T)
-feature.names.exprelieff <- names(exprelieff.importances)
-feature.names.exprelieff[1:10]
+gini_evals <- sort(attrEval(train_data.label ~ ., model_train_data, "Gini"), decreasing = T)
+gini_features <- names(gini_evals)
 
-bestKRelieff.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "ReliefFbestK"), decreasing = T)
-feature.names.bestKRelieff <- names(bestKRelieff.importances)
-feature.names.bestKRelieff[1:10]
+mdl_evals <- sort(attrEval(train_data.label ~ ., model_train_data, "MDL"), decreasing = T)
+mdl_features <- names(mdl_evals)
 
-infGain.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "InfGain"), decreasing = T)
-feature.names.infGain <- names(infGain.importances)
-feature.names.infGain[1:10]
-
-gini.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "Gini"), decreasing = T)
-feature.names.gini <- names(gini.importances)
-feature.names.gini[1:10]
-
-mdl.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "MDL"), decreasing = T)
-feature.names.mdl <- names(mdl.importances)
-feature.names.mdl[1:10]
-
-cosine.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "DistAngle"), decreasing = T)
-feature.names.cosine <- names(cosine.importances)
-feature.names.cosine[1:10]
-
-reliefFMerit.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "ReliefFmerit"), decreasing = T)
-feature.names.reliefFMerit <- names(reliefFMerit.importances)
-feature.names.reliefFMerit[1:10]
-
-rReliefFSqrDist.importances <- sort(attrEval(train_data.label ~ ., model_train_data, "MyopicReliefF"), decreasing = T)
-feature.names.rReliefFSqrDist <- names(rReliefFSqrDist.importances)
-feature.names.rReliefFSqrDist[1:10]
-
+relief_features[1:10]
+reliefFBestK_features[1:10]
+infGain_features[1:10]
+gini_features[1:10]
+mdl_features[1:10]
 ```
 
 ### Model re-evaluation with top n number of features
 
+For model re-evaluation we have chosen the Gini-index filter method.
+
 ``` {r warning = FALSE}
 nofFeatures <- c(1, 2, 3, 5, 7, 9, 15, 20, 30, 40)
 
-method = "svmLinearWeights";
-
+method = "svmLinear";
 control <- trainControl(method = 'repeatedcv', number = 10, repeats = 3)
 
+acc <- vector()
+prec <- vector()
+rec <- vector()
+f1 <- vector()
+spec <- vector()
 
-cat('| Number of top features |   Accuracy |  Precision |     Recall |   F1 Score | Specificity|\n');
+
 for (n in nofFeatures) {
+  
   # First extract a new dtm with only the top n features
-  top_train_dtm = dtm[,intersect(colnames(dtm), feature.names.rReliefFSqrDist[1:n])]
-  mat <- as.matrix(top_train_dtm)
+  top_train_dtm <- dtm[,intersect(colnames(dtm), gini_features[1:n])]
+  tmp_train_mat <- as.matrix(top_train_dtm)
   
+  # Do the same for test data
   top_test_dtm <- DocumentTermMatrix(test_corpus)
-  top_test_dtm <- top_test_dtm[, intersect(colnames(top_test_dtm), feature.names.rReliefFSqrDist[1:n])]
-  test_mat <- as.matrix(top_test_dtm)
-  
-  model_train_data <- data.frame(mat, train_data$label)
+  top_test_dtm <- top_test_dtm[, intersect(colnames(top_test_dtm), gini_features[1:n])]
+  tmp_test_mat <- as.matrix(top_test_dtm)
+  model_train_data <- data.frame(tmp_train_mat, train_data$label)
   
   # Train the model using the training data and repeated cv training control
   model <- train(
@@ -415,29 +408,58 @@ for (n in nofFeatures) {
     trControl=control
   )
   
-  # To predict many results at once, use the extractPrediction function from carret
   model_predictions = extractPrediction(
     list(mode_name=model),
-    testX = test_mat,
+    testX = tmp_test_mat,
     testY = as.factor(test_data$label),
   )
   
   predictions = model_predictions[model_predictions$dataType=='Test',]
   
-  accuracy = Accuracy(predictions$obs, predictions$pred)
-  precision = Precision(predictions$obs, predictions$pred)
-  recall = Recall(predictions$obs, predictions$pred)
-  f1_score = F1_Score(predictions$obs, predictions$pred)
-  specificity <- Specificity(predictions$obs, predictions$pred)
-  
-  cat(sprintf("| %22d |     %1.4f |     %1.4f |     %1.4f |     %1.4f |     %1.4f |\n",
-              n, accuracy, precision, recall, f1_score, specificity))
+  acc <- c(acc, Accuracy(predictions$obs, predictions$pred))
+  prec <- c(prec, Precision(predictions$obs, predictions$pred))
+  rec <- c(rec, Recall(predictions$obs, predictions$pred))
+  f1 <- c(f1, F1_Score(predictions$obs, predictions$pred))
+  spec <- c(spec, Specificity(predictions$obs, predictions$pred))
 }
-
-
 ```
 
+As we can see, the model's performance is highest at 3 selected features and then drops rapidly.
 
+The model's accuracy does not improve with feature selection, but it is comparable to the results of the previous model. However, the training time of the model is reduced with lower number of features.
 
+This can also lower the chances of data-overfitting.
 
+``` {r warning = FALSE}
+plot(x = nofFeatures, y = acc)
+```
+
+### Feature selection with wrapper methods (random forest)
+
+Jaccard's score for Random Forest and Gini-index is generaly high for low n's but gets lower as n increases.
+
+This means that these two methods select features similarly.
+
+``` {r warning = FALSE}
+rf_model = train(x = mat, y = train_data$label, method = "rf", metric = "Accuracy", trControl = control)
+
+rf_imp <- varImp(rf_model, scale = FALSE)
+
+rf_imp_values <- rf_imp$importance
+rf_imp_names <- rownames(rf_imp$importance)
+rf_imp_whole <- data.frame(score = rf_imp_values, cnames = rf_imp_names)
+rf_imp_whole <- rf_imp_whole[order(rf_imp_whole$Overall, decreasing = T),]
+
+rf_features <- rf_imp_whole$cnames[1:50]
+gini_features <- names(gini_evals)
+
+js_scores <- vector()
+
+for (n in nofFeatures) {
+  gini_js <- length(intersect(rf_features[1:n], gini_features[1:n])) / length(union(rf_features[1:n], gini_features[1:n]))
+  js_scores <- c(js_scores, gini_js)
+}
+
+plot(x=nofFeatures, y=js_scores, title(main='Jaccard(RandomForest, Gini)'))
+```
 
